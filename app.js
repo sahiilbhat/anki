@@ -1,4 +1,5 @@
 const STORAGE_BUCKET = "card-assets";
+const APP_URL = "https://sahiilbhat.github.io/anki/";
 const { createClient } = window.supabase || {};
 
 if (!createClient) {
@@ -797,7 +798,11 @@ async function handleAuthSubmit(event) {
   const password = els.authPassword.value;
 
   const result = authMode === "signup"
-    ? await supabaseClient.auth.signUp({ email, password })
+    ? await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: APP_URL }
+    })
     : await supabaseClient.auth.signInWithPassword({ email, password });
 
   if (result.error) {
