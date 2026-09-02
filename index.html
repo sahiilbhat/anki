@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interview Anki</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-mark">A</div>
+                <div>
+                    <h1>Interview Anki</h1>
+                    <p>Local-first prep</p>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <button class="nav-item active" data-view="dashboard">Dashboard</button>
+                <button class="nav-item" data-view="review">Review</button>
+                <button class="nav-item" data-view="cards">Cards</button>
+            </nav>
+
+            <div class="deck-section">
+                <div class="section-heading">
+                    <span>Decks</span>
+                    <button id="addDeckBtn" class="icon-btn" aria-label="Add deck">+</button>
+                </div>
+                <div id="deckList" class="deck-list"></div>
+            </div>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">Interview preparation</p>
+                    <h2 id="pageTitle">Dashboard</h2>
+                </div>
+                <div class="topbar-actions">
+                    <div class="streak-pill">🔥 <span id="streakValue">0</span> day streak</div>
+                    <button id="addCardBtn" class="primary-btn">+ Add card</button>
+                </div>
+            </header>
+
+            <section id="dashboardView" class="view active">
+                <div class="stats-grid">
+                    <article class="stat-card">
+                        <span>Due today</span>
+                        <strong id="dueCount">0</strong>
+                        <small>Cards ready for review</small>
+                    </article>
+                    <article class="stat-card">
+                        <span>Total cards</span>
+                        <strong id="totalCards">0</strong>
+                        <small>Across all decks</small>
+                    </article>
+                    <article class="stat-card">
+                        <span>Reviewed today</span>
+                        <strong id="reviewedToday">0</strong>
+                        <small>Keep the streak alive</small>
+                    </article>
+                    <article class="stat-card">
+                        <span>Retention</span>
+                        <strong id="retentionValue">0%</strong>
+                        <small>Good + Easy reviews</small>
+                    </article>
+                </div>
+
+                <div class="dashboard-grid">
+                    <article class="panel hero-panel">
+                        <div>
+                            <p class="eyebrow">Ready to study?</p>
+                            <h3 id="heroDueText">No cards due right now</h3>
+                            <p>Use spaced repetition to revisit concepts at the right time.</p>
+                        </div>
+                        <button id="startReviewBtn" class="primary-btn">Start review</button>
+                    </article>
+
+                    <article class="panel">
+                        <div class="panel-heading">
+                            <div>
+                                <p class="eyebrow">Deck overview</p>
+                                <h3>Your decks</h3>
+                            </div>
+                        </div>
+                        <div id="deckOverview" class="deck-overview"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="reviewView" class="view">
+                <div class="review-layout">
+                    <div class="review-meta">
+                        <span id="reviewDeckBadge" class="badge">Deck</span>
+                        <span><span id="reviewPosition">0</span> / <span id="reviewTotal">0</span></span>
+                    </div>
+
+                    <article class="flashcard">
+                        <p class="eyebrow">Question</p>
+                        <h3 id="questionText">No cards due.</h3>
+
+                        <div id="answerArea" class="answer-area hidden">
+                            <div class="divider"></div>
+                            <p class="eyebrow">Answer</p>
+                            <div id="answerText"></div>
+                            <div id="answerConcepts" class="concept-tags"></div>
+                        </div>
+                    </article>
+
+                    <div class="review-actions">
+                        <button id="showAnswerBtn" class="primary-btn wide-btn">Show answer</button>
+                        <div id="ratingActions" class="rating-grid hidden">
+                            <button data-rating="again" class="rating-btn"><strong>Again</strong><span>1
+                                    min</span></button>
+                            <button data-rating="hard" class="rating-btn"><strong>Hard</strong><span>1
+                                    day</span></button>
+                            <button data-rating="good" class="rating-btn"><strong>Good</strong><span>3
+                                    days</span></button>
+                            <button data-rating="easy" class="rating-btn"><strong>Easy</strong><span>7
+                                    days</span></button>
+                        </div>
+                    </div>
+
+                    <div class="voice-panel">
+                        <div>
+                            <p class="eyebrow">Practice aloud</p>
+                            <h4>Say your answer before revealing it</h4>
+                            <p id="voiceStatus">Voice transcription works in browsers that support Web Speech API.</p>
+                        </div>
+                        <button id="recordBtn" class="secondary-btn">🎙 Start speaking</button>
+                        <div id="transcriptBox" class="transcript hidden"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="cardsView" class="view">
+                <div class="cards-toolbar">
+                    <input id="searchInput" type="search" placeholder="Search questions, answers or tags..." />
+                    <select id="deckFilter"></select>
+                </div>
+                <div id="cardsTable" class="cards-table"></div>
+            </section>
+        </main>
+    </div>
+
+    <dialog id="cardDialog" class="modal">
+        <form id="cardForm" method="dialog">
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">Card editor</p>
+                    <h3 id="cardDialogTitle">Add card</h3>
+                </div>
+                <button type="button" class="icon-btn" id="closeCardDialog">×</button>
+            </div>
+
+            <input type="hidden" id="cardId" />
+            <label>
+                Deck
+                <select id="cardDeck" required></select>
+            </label>
+            <label>
+                Question
+                <textarea id="cardQuestion" rows="4" required></textarea>
+            </label>
+            <label>
+                Answer
+                <textarea id="cardAnswer" rows="6" required></textarea>
+            </label>
+            <label>
+                Tags <small>Comma separated</small>
+                <input id="cardTags" type="text" placeholder="closure, javascript, scope" />
+            </label>
+
+            <div class="modal-actions">
+                <button type="button" class="secondary-btn" id="cancelCardBtn">Cancel</button>
+                <button type="submit" class="primary-btn">Save card</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="deckDialog" class="modal small-modal">
+        <form id="deckForm" method="dialog">
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">New deck</p>
+                    <h3>Create deck</h3>
+                </div>
+                <button type="button" class="icon-btn" id="closeDeckDialog">×</button>
+            </div>
+
+            <label>
+                Deck name
+                <input id="deckName" type="text" required placeholder="e.g. Node.js" />
+            </label>
+
+            <div class="modal-actions">
+                <button type="button" class="secondary-btn" id="cancelDeckBtn">Cancel</button>
+                <button type="submit" class="primary-btn">Create deck</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="./app.js"></script>
+</body>
+
+</html>
