@@ -5,7 +5,7 @@ if (!createClient) {
   throw new Error("Supabase client failed to load.");
 }
 
-const supabase = createClient(
+const supabaseClient = createClient(
   window.ANKI_SUPABASE_URL,
   window.ANKI_SUPABASE_PUBLISHABLE_KEY
 );
@@ -259,7 +259,7 @@ async function seedDefaultData() {
     name
   }));
 
-  const { error: deckError } = await supabase.from("decks").insert(decks);
+  const { error: deckError } = await supabaseClient.from("decks").insert(decks);
   if (deckError) throw deckError;
 
   const deckIds = Object.fromEntries(decks.map(deck => [deck.name, deck.id]));
@@ -275,7 +275,7 @@ async function seedDefaultData() {
     ease: 2.5
   }));
 
-  const { error: cardError } = await supabase.from("cards").insert(cards);
+  const { error: cardError } = await supabaseClient.from("cards").insert(cards);
   if (cardError) throw cardError;
 }
 
@@ -283,9 +283,9 @@ async function loadCloudState() {
   setSyncStatus("Syncing...");
 
   const [decksResult, cardsResult, reviewsResult] = await Promise.all([
-    supabase.from("decks").select("*").order("created_at"),
-    supabase.from("cards").select("*").order("created_at"),
-    supabase.from("reviews").select("*").order("reviewed_at")
+    supabaseClient.from("decks").select("*").order("created_at"),
+    supabaseClient.from("cards").select("*").order("created_at"),
+    supabaseClient.from("reviews").select("*").order("reviewed_at")
   ]);
 
   if (decksResult.error) throw decksResult.error;
@@ -435,7 +435,7 @@ async function loadCardMedia(card) {
   resetMediaPlayers();
 
   if (card.audioPath) {
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabaseClient.storage
       .from(STORAGE_BUCKET)
       .createSignedUrl(card.audioPath, 3600);
     if (!error && data?.signedUrl && reviewQueue[reviewIndex]?.id === cardId) {
@@ -445,7 +445,7 @@ async function loadCardMedia(card) {
   }
 
   const attachmentLinks = await Promise.all((card.attachments || []).map(async path => {
-    const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(path, 3600);
+    const { data } = await supabaseClient.storage.from(STORAGE_BUCKET).createSignedUrl(path, 3600);
     return data?.signedUrl ? { path, url: data.signedUrl } : null;
   }));
 
@@ -455,7 +455,7 @@ async function loadCardMedia(card) {
     `).join("");
   }
 
-  const { data: recordings } = await supabase
+  const { data: recordings } = await supabaseClient
     .from("review_recordings")
     .select("storage_path")
     .eq("card_id", cardId)
@@ -463,7 +463,7 @@ async function loadCardMedia(card) {
     .limit(1);
   const latest = recordings?.[0];
   if (latest && reviewQueue[reviewIndex]?.id === cardId) {
-    const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(latest.storage_path, 3600);
+    const { data } = await supabaseClient.storage.from(STORAGE_BUCKET).createSignedUrl(latest.storage_path, 3600);
     if (data?.signedUrl) {
       els.recordingAudio.src = data.signedUrl;
       els.recordingAudio.classList.remove("hidden");
@@ -515,7 +515,7 @@ async function rateCurrentCard(rating) {
 
   try {
     const updated = scheduleCard(card, rating);
-    const { error: cardError } = await supabase
+    const { error: cardError } = await supabaseClient
       .from("cards")
       .update({
         due_at: new Date(updated.dueAt).toISOString(),
@@ -526,7 +526,7 @@ async function rateCurrentCard(rating) {
       .eq("id", card.id);
     if (cardError) throw cardError;
 
-    const { error: reviewError } = await supabase.from("reviews").insert({
+    const { error: reviewError } = await supabaseClient.from("reviews").insert({
       id: crypto.randomUUID(),
       user_id: session.user.id,
       card_id: card.id,
@@ -571,7 +571,7 @@ async function uploadFile(file, path) {
     throw new Error(`${file.name} is larger than the 25 MB limit.`);
   }
 
-  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, {
+  const { error } = await supabaseClient.storage.from(STORAGE_BUCKET).upload(path, file, {
     contentType: file.type || "application/octet-stream",
     upsert: false
   });
@@ -598,7 +598,7 @@ async function saveCard(event) {
       attachments: existing?.attachments || []
     };
 
-    const { error: cardError } = await supabase.from("cards").upsert(cardToRow(card));
+    const { error: cardError } = await supabaseClient.from("cards").upsert(cardToRow(card));
     if (cardError) throw cardError;
 
     const userPrefix = `${session.user.id}/${id}`;
@@ -620,7 +620,7 @@ async function saveCard(event) {
     }
 
     if (audioFile || attachmentFiles.length) {
-      const { error: mediaError } = await supabase
+      const { error: mediaError } = await supabaseClient
         .from("cards")
         .update({
           audio_path: card.audioPath,
@@ -645,9 +645,9 @@ async function deleteCard(cardId) {
 
   try {
     const paths = [card.audioPath, ...(card.attachments || [])].filter(Boolean);
-    if (paths.length) await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+    if (paths.length) await supabaseClient.storage.from(STORAGE_BUCKET).remove(paths);
 
-    const { error } = await supabase.from("cards").delete().eq("id", cardId);
+    const { error } = await supabaseClient.from("cards").delete().eq("id", cardId);
     if (error) throw error;
     await loadCloudState();
     renderAll();
@@ -663,7 +663,7 @@ async function createDeck(event) {
   if (!name) return;
 
   try {
-    const { error } = await supabase.from("decks").insert({
+    const { error } = await supabaseClient.from("decks").insert({
       id: crypto.randomUUID(),
       user_id: session.user.id,
       name
@@ -752,7 +752,7 @@ async function finishRecording() {
     if (!card || !blob.size) throw new Error("No audio was recorded.");
     const fileName = `review-${Date.now()}.webm`;
     const path = await uploadFile(new File([blob], fileName, { type: blob.type }), `${session.user.id}/${card.id}/${fileName}`);
-    const { error } = await supabase.from("review_recordings").insert({
+    const { error } = await supabaseClient.from("review_recordings").insert({
       id: crypto.randomUUID(),
       user_id: session.user.id,
       card_id: card.id,
@@ -797,8 +797,8 @@ async function handleAuthSubmit(event) {
   const password = els.authPassword.value;
 
   const result = authMode === "signup"
-    ? await supabase.auth.signUp({ email, password })
-    : await supabase.auth.signInWithPassword({ email, password });
+    ? await supabaseClient.auth.signUp({ email, password })
+    : await supabaseClient.auth.signInWithPassword({ email, password });
 
   if (result.error) {
     els.authStatus.textContent = result.error.message;
@@ -855,7 +855,7 @@ els.authForm.addEventListener("submit", event => handleAuthSubmit(event).catch(e
   els.authStatus.textContent = error.message;
 }));
 els.authToggle.addEventListener("click", () => setAuthMode(authMode === "signin" ? "signup" : "signin"));
-els.signOutBtn.addEventListener("click", () => supabase.auth.signOut());
+els.signOutBtn.addEventListener("click", () => supabaseClient.auth.signOut());
 els.ratingActions.addEventListener("click", event => {
   const button = event.target.closest("[data-rating]");
   if (button) rateCurrentCard(button.dataset.rating);
@@ -884,11 +884,11 @@ els.cancelDeckBtn.addEventListener("click", () => els.deckDialog.close());
 
 setupVoiceRecognition();
 
-supabase.auth.onAuthStateChange((event, nextSession) => {
+supabaseClient.auth.onAuthStateChange((event, nextSession) => {
   setTimeout(() => handleSession(nextSession), 0);
 });
 
-supabase.auth.getSession()
+supabaseClient.auth.getSession()
   .then(({ data: { session: currentSession } }) => handleSession(currentSession))
   .catch(error => {
     els.authStatus.textContent = error.message;
