@@ -54,12 +54,23 @@ const DEFAULT_CARDS = [
 
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const SCHEDULER = {
+  learningSteps: [1 * MINUTE, 10 * MINUTE],
+  relearningSteps: [10 * MINUTE],
+  graduatingInterval: 1,
+  easyInterval: 4,
+  hardMultiplier: 1.2,
+  newIntervalMultiplier: 0
+};
 
 let session = null;
 let state = { decks: [], cards: [], reviews: [] };
 let currentView = "dashboard";
 let reviewQueue = [];
 let reviewIndex = 0;
+let reviewedInSession = 0;
+let reviewTimer = null;
 let recognition = null;
 let mediaRecorder = null;
 let recordingStream = null;
@@ -176,40 +187,120 @@ function calculateStreak() {
   return streak;
 }
 
-function scheduleCard(card, rating, now = Date.now()) {
-  const updated = { ...card };
+function cardState(card) {
+  if (card.cardState) return card.cardState;
+  return card.interval > 0 ? "review" : "new";
+}
+
+function learningStepsFor(card) {
+  return cardState(card) === "relearning"
+    ? SCHEDULER.relearningSteps
+    : SCHEDULER.learningSteps;
+}
+
+function graduateCard(card, interval, now) {
+  return {
+    ...card,
+    cardState: "review",
+    learningStep: 0,
+    lapseInterval: 0,
+    interval: Math.max(1, Math.round(interval)),
+    dueAt: now + Math.max(1, Math.round(interval)) * DAY
+  };
+}
+
+function scheduleLearningCard(card, rating, now) {
+  const steps = learningStepsFor(card);
+  const step = Math.min(card.learningStep || 0, steps.length - 1);
+  const updated = { ...card, cardState: cardState(card) };
 
   if (rating === "again") {
-    updated.interval = 0;
-    updated.ease = Math.max(1.3, (card.ease || 2.5) - 0.2);
-    updated.dueAt = now + MINUTE;
+    updated.learningStep = 0;
+    updated.dueAt = now + steps[0];
+    if (updated.cardState === "relearning") updated.interval = card.lapseInterval || card.interval;
+    return updated;
   }
 
   if (rating === "hard") {
-    const nextInterval = Math.max(1, Math.round((card.interval || 1) * 1.2));
-    updated.interval = nextInterval;
-    updated.ease = Math.max(1.3, (card.ease || 2.5) - 0.05);
-    updated.dueAt = now + nextInterval * DAY;
-  }
-
-  if (rating === "good") {
-    const nextInterval = card.interval > 0
-      ? Math.max(3, Math.round(card.interval * (card.ease || 2.5)))
-      : 3;
-    updated.interval = nextInterval;
-    updated.dueAt = now + nextInterval * DAY;
+    const currentDelay = steps[step] || MINUTE;
+    const nextDelay = steps[step + 1];
+    const delay = nextDelay ? Math.round((currentDelay + nextDelay) / 2) : Math.round(currentDelay * 1.5);
+    updated.learningStep = step;
+    updated.dueAt = now + delay;
+    return updated;
   }
 
   if (rating === "easy") {
-    const nextInterval = card.interval > 0
-      ? Math.max(7, Math.round(card.interval * (card.ease || 2.5) * 1.3))
-      : 7;
-    updated.interval = nextInterval;
-    updated.ease = Math.min(3.2, (card.ease || 2.5) + 0.15);
-    updated.dueAt = now + nextInterval * DAY;
+    return graduateCard(card, SCHEDULER.easyInterval, now);
   }
 
+  if (step + 1 < steps.length) {
+    updated.learningStep = step + 1;
+    updated.dueAt = now + steps[step + 1];
+    return updated;
+  }
+
+  const interval = cardState(card) === "relearning"
+    ? Math.max(1, Math.floor((card.lapseInterval || card.interval || 1) * SCHEDULER.newIntervalMultiplier))
+    : SCHEDULER.graduatingInterval;
+  return graduateCard(card, interval, now);
+}
+
+function scheduleCard(card, rating, now = Date.now()) {
+  const stateName = cardState(card);
+
+  if (stateName === "new" || stateName === "learning" || stateName === "relearning") {
+    const updated = scheduleLearningCard(card, rating, now);
+    if (updated.cardState === "new") {
+      updated.cardState = "learning";
+    }
+    return updated;
+  }
+
+  const updated = { ...card, cardState: "review", learningStep: 0 };
+  const interval = Math.max(1, card.interval || 1);
+
+  if (rating === "again") {
+    updated.cardState = "relearning";
+    updated.learningStep = 0;
+    updated.lapseInterval = interval;
+    updated.dueAt = now + SCHEDULER.relearningSteps[0];
+    updated.ease = Math.max(1.3, (card.ease || 2.5) - 0.2);
+    return updated;
+  }
+
+  if (rating === "hard") {
+    updated.interval = Math.max(1, Math.round(interval * SCHEDULER.hardMultiplier));
+    updated.ease = Math.max(1.3, (card.ease || 2.5) - 0.15);
+  }
+
+  if (rating === "good") {
+    updated.interval = Math.max(interval + 1, Math.round(interval * (card.ease || 2.5)));
+  }
+
+  if (rating === "easy") {
+    updated.interval = Math.max(interval + 1, Math.round(interval * (card.ease || 2.5) * 1.3));
+    updated.ease = Math.min(3.2, (card.ease || 2.5) + 0.15);
+  }
+
+  updated.dueAt = now + updated.interval * DAY;
   return updated;
+}
+
+function formatDelay(delayMs) {
+  if (delayMs < HOUR) {
+    const minutes = Math.max(1, Math.round(delayMs / MINUTE));
+    return `${minutes} min`;
+  }
+  const days = Math.max(1, Math.round(delayMs / DAY));
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+function renderRatingLabels(card) {
+  els.ratingActions.querySelectorAll("[data-rating]").forEach(button => {
+    const preview = scheduleCard(card, button.dataset.rating);
+    button.querySelector("span").textContent = formatDelay(preview.dueAt - Date.now());
+  });
 }
 
 function normalizeCard(row) {
@@ -222,6 +313,9 @@ function normalizeCard(row) {
     dueAt: new Date(row.due_at).getTime(),
     interval: row.interval || 0,
     ease: Number(row.ease || 2.5),
+    cardState: row.card_state || (row.interval > 0 ? "review" : "new"),
+    learningStep: row.learning_step || 0,
+    lapseInterval: row.lapse_interval || 0,
     audioPath: row.audio_path || null,
     attachments: row.attachment_paths || []
   };
@@ -248,6 +342,9 @@ function cardToRow(card) {
     due_at: new Date(card.dueAt || Date.now()).toISOString(),
     interval: card.interval || 0,
     ease: card.ease || 2.5,
+    card_state: cardState(card),
+    learning_step: card.learningStep || 0,
+    lapse_interval: card.lapseInterval || 0,
     audio_path: card.audioPath || null,
     attachment_paths: card.attachments || [],
     updated_at: new Date().toISOString()
@@ -275,7 +372,10 @@ async function seedDefaultData() {
     tags: card.tags,
     due_at: new Date().toISOString(),
     interval: 0,
-    ease: 2.5
+    ease: 2.5,
+    card_state: "new",
+    learning_step: 0,
+    lapse_interval: 0
   }));
 
   const { error: cardError } = await supabaseClient.from("cards").insert(cards);
@@ -420,7 +520,41 @@ function switchView(view) {
 function beginReview(deckId = null) {
   reviewQueue = getDueCards(deckId);
   reviewIndex = 0;
+  reviewedInSession = 0;
   renderReviewCard();
+}
+
+function nextDueQueueIndex() {
+  for (let index = reviewIndex; index < reviewQueue.length; index++) {
+    if (reviewQueue[index] && isDue(reviewQueue[index])) return index;
+  }
+  return -1;
+}
+
+function clearReviewTimer() {
+  if (reviewTimer) {
+    clearTimeout(reviewTimer);
+    reviewTimer = null;
+  }
+}
+
+function renderWaitingCard() {
+  const upcoming = reviewQueue
+    .filter((card, index) => card && index >= reviewIndex && !isDue(card))
+    .sort((a, b) => a.dueAt - b.dueAt)[0];
+
+  if (!upcoming) return false;
+
+  const delay = Math.max(500, upcoming.dueAt - Date.now());
+  els.reviewDeckBadge.textContent = "Next up";
+  els.reviewPosition.textContent = reviewedInSession;
+  els.reviewTotal.textContent = reviewedInSession + reviewQueue.filter(Boolean).length;
+  els.questionText.textContent = `Next card in ${formatDelay(delay)}`;
+  els.answerArea.classList.add("hidden");
+  els.showAnswerBtn.classList.add("hidden");
+  els.ratingActions.classList.add("hidden");
+  reviewTimer = setTimeout(() => renderReviewCard(), delay);
+  return true;
 }
 
 function resetMediaPlayers() {
@@ -475,6 +609,7 @@ async function loadCardMedia(card) {
 }
 
 function renderReviewCard() {
+  clearReviewTimer();
   els.answerArea.classList.add("hidden");
   els.ratingActions.classList.add("hidden");
   els.showAnswerBtn.classList.remove("hidden");
@@ -483,25 +618,30 @@ function renderReviewCard() {
   latestTranscript = "";
   resetMediaPlayers();
 
-  if (!reviewQueue.length || reviewIndex >= reviewQueue.length) {
+  const nextIndex = nextDueQueueIndex();
+  if (nextIndex === -1 && renderWaitingCard()) return;
+
+  if (nextIndex === -1) {
     els.reviewDeckBadge.textContent = "Complete";
-    els.reviewPosition.textContent = reviewQueue.length;
-    els.reviewTotal.textContent = reviewQueue.length;
+    els.reviewPosition.textContent = reviewedInSession;
+    els.reviewTotal.textContent = reviewedInSession;
     els.questionText.textContent = "You’re done with this review session.";
     els.showAnswerBtn.classList.add("hidden");
     return;
   }
 
+  reviewIndex = nextIndex;
   const card = reviewQueue[reviewIndex];
   const deck = getDeck(card.deckId);
   els.reviewDeckBadge.textContent = deck?.name || "Deck";
-  els.reviewPosition.textContent = reviewIndex + 1;
-  els.reviewTotal.textContent = reviewQueue.length;
+  els.reviewPosition.textContent = reviewedInSession + 1;
+  els.reviewTotal.textContent = reviewedInSession + reviewQueue.filter(Boolean).length;
   els.questionText.textContent = card.question;
   els.answerText.textContent = card.answer;
   els.answerConcepts.innerHTML = (card.tags || [])
     .map(tag => `<span class="concept-tag">${escapeHtml(tag)}</span>`)
     .join("");
+  renderRatingLabels(card);
   loadCardMedia(card).catch(error => console.error("Could not load card media", error));
 }
 
@@ -524,6 +664,9 @@ async function rateCurrentCard(rating) {
         due_at: new Date(updated.dueAt).toISOString(),
         interval: updated.interval,
         ease: updated.ease,
+        card_state: updated.cardState,
+        learning_step: updated.learningStep || 0,
+        lapse_interval: updated.lapseInterval || 0,
         updated_at: new Date().toISOString()
       })
       .eq("id", card.id);
@@ -539,7 +682,11 @@ async function rateCurrentCard(rating) {
     });
     if (reviewError) throw reviewError;
 
-    reviewIndex++;
+    reviewQueue[reviewIndex] = null;
+    reviewedInSession++;
+    if (["learning", "relearning"].includes(updated.cardState)) {
+      reviewQueue.push(updated);
+    }
     await loadCloudState();
     renderReviewCard();
     renderAll();
@@ -741,7 +888,10 @@ async function importCardsFromFile(file) {
       tags: card.tags,
       due_at: new Date().toISOString(),
       interval: 0,
-      ease: 2.5
+      ease: 2.5,
+      card_state: "new",
+      learning_step: 0,
+      lapse_interval: 0
     }));
 
     const { error: cardError } = await supabaseClient.from("cards").insert(cardRows);

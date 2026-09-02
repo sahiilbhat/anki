@@ -27,6 +27,14 @@ create table if not exists public.cards (
   updated_at timestamptz not null default now()
 );
 
+alter table public.cards add column if not exists card_state text not null default 'new';
+alter table public.cards add column if not exists learning_step integer not null default 0;
+alter table public.cards add column if not exists lapse_interval integer not null default 0;
+
+update public.cards
+set card_state = 'review'
+where card_state = 'new' and interval > 0;
+
 create table if not exists public.reviews (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
