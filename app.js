@@ -101,6 +101,7 @@ const els = {
   },
   pageTitle: document.querySelector("#pageTitle"),
   navItems: [...document.querySelectorAll(".nav-item")],
+  sidebarToggle: document.querySelector("#sidebarToggle"),
   deckList: document.querySelector("#deckList"),
   deckOverview: document.querySelector("#deckOverview"),
   dueCount: document.querySelector("#dueCount"),
@@ -1133,7 +1134,19 @@ function renderAll() {
   if (currentView === "cards") renderCards();
 }
 
+function setSidebarCollapsed(collapsed) {
+  els.appShell.classList.toggle("sidebar-collapsed", collapsed);
+  els.sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+  els.sidebarToggle.setAttribute("aria-label", collapsed ? "Open sidebar" : "Collapse sidebar");
+  els.sidebarToggle.title = collapsed ? "Open sidebar" : "Collapse sidebar";
+  els.sidebarToggle.textContent = collapsed ? "›" : "‹";
+  localStorage.setItem("anki-sidebar-collapsed", String(collapsed));
+}
+
 els.navItems.forEach(item => item.addEventListener("click", () => switchView(item.dataset.view)));
+els.sidebarToggle.addEventListener("click", () => {
+  setSidebarCollapsed(!els.appShell.classList.contains("sidebar-collapsed"));
+});
 els.startReviewBtn.addEventListener("click", () => switchView("review"));
 els.showAnswerBtn.addEventListener("click", showAnswer);
 els.addCardBtn.addEventListener("click", () => openCardDialog());
@@ -1176,6 +1189,7 @@ els.closeDeckDialog.addEventListener("click", () => els.deckDialog.close());
 els.cancelDeckBtn.addEventListener("click", () => els.deckDialog.close());
 
 setupVoiceRecognition();
+setSidebarCollapsed(localStorage.getItem("anki-sidebar-collapsed") === "true");
 
 supabaseClient.auth.onAuthStateChange((event, nextSession) => {
   setTimeout(() => handleSession(nextSession), 0);
