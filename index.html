@@ -9,7 +9,35 @@
 </head>
 
 <body>
-    <div class="app-shell">
+    <section id="authGate" class="auth-gate">
+        <div class="auth-card">
+            <div class="brand auth-brand">
+                <div class="brand-mark">A</div>
+                <div>
+                    <h1>Interview Anki</h1>
+                    <p>Cloud-synced interview prep</p>
+                </div>
+            </div>
+            <p class="eyebrow">Your private study space</p>
+            <h2 id="authTitle">Sign in to continue</h2>
+            <p id="authSubtitle" class="auth-subtitle">Your decks, reviews, and audio stay synced across devices.</p>
+            <form id="authForm" class="auth-form">
+                <label>
+                    Email
+                    <input id="authEmail" type="email" autocomplete="email" required />
+                </label>
+                <label>
+                    Password
+                    <input id="authPassword" type="password" autocomplete="current-password" minlength="6" required />
+                </label>
+                <button id="authSubmit" type="submit" class="primary-btn">Sign in</button>
+            </form>
+            <p id="authStatus" class="auth-status" role="status"></p>
+            <button id="authToggle" type="button" class="text-btn">Need an account? Sign up</button>
+        </div>
+    </section>
+
+    <div id="appShell" class="app-shell hidden">
         <aside class="sidebar">
             <div class="brand">
                 <div class="brand-mark">A</div>
@@ -43,6 +71,11 @@
                 <div class="topbar-actions">
                     <div class="streak-pill">🔥 <span id="streakValue">0</span> day streak</div>
                     <button id="addCardBtn" class="primary-btn">+ Add card</button>
+                    <span id="syncStatus" class="sync-status" role="status"></span>
+                    <div class="account-control">
+                        <span id="userEmail"></span>
+                        <button id="signOutBtn" class="secondary-btn" type="button">Sign out</button>
+                    </div>
                 </div>
             </header>
 
@@ -106,9 +139,12 @@
                         <div id="answerArea" class="answer-area hidden">
                             <div class="divider"></div>
                             <p class="eyebrow">Answer</p>
-                            <div id="answerText"></div>
-                            <div id="answerConcepts" class="concept-tags"></div>
-                        </div>
+                        <div id="answerText"></div>
+                        <div id="answerConcepts" class="concept-tags"></div>
+                        <audio id="cardAudio" class="card-audio hidden" controls></audio>
+                        <audio id="recordingAudio" class="card-audio hidden" controls></audio>
+                        <div id="cardAttachments" class="card-attachments"></div>
+                    </div>
                     </article>
 
                     <div class="review-actions">
@@ -129,9 +165,9 @@
                         <div>
                             <p class="eyebrow">Practice aloud</p>
                             <h4>Say your answer before revealing it</h4>
-                            <p id="voiceStatus">Voice transcription works in browsers that support Web Speech API.</p>
+                            <p id="voiceStatus">Record your answer and save it with this review.</p>
                         </div>
-                        <button id="recordBtn" class="secondary-btn">🎙 Start speaking</button>
+                        <button id="recordBtn" class="secondary-btn">🎙 Record answer</button>
                         <div id="transcriptBox" class="transcript hidden"></div>
                     </div>
                 </div>
@@ -174,6 +210,14 @@
                 Tags <small>Comma separated</small>
                 <input id="cardTags" type="text" placeholder="closure, javascript, scope" />
             </label>
+            <label>
+                Reference audio <small>Optional; max 25 MB</small>
+                <input id="cardAudioFile" type="file" accept="audio/*" />
+            </label>
+            <label>
+                Attachments <small>Optional: images, PDFs, or other audio</small>
+                <input id="cardAttachmentsInput" type="file" accept="audio/*,image/*,application/pdf" multiple />
+            </label>
 
             <div class="modal-actions">
                 <button type="button" class="secondary-btn" id="cancelCardBtn">Cancel</button>
@@ -204,6 +248,8 @@
         </form>
     </dialog>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-config.js"></script>
     <script src="./app.js"></script>
 </body>
 

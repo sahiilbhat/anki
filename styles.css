@@ -23,6 +23,86 @@ body {
     background: var(--bg);
 }
 
+.auth-gate {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top right, rgba(15, 23, 42, .08), transparent 34%),
+        var(--bg);
+}
+
+.auth-card {
+    width: min(440px, 100%);
+    padding: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: var(--shadow);
+}
+
+.auth-brand {
+    margin-bottom: 38px;
+    color: var(--text);
+}
+
+.auth-card h2 {
+    margin: 8px 0;
+    font-size: 28px;
+}
+
+.auth-subtitle,
+.auth-status {
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.auth-form {
+    display: grid;
+    gap: 14px;
+    margin-top: 24px;
+}
+
+.auth-form label {
+    display: grid;
+    gap: 7px;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.auth-form input {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: white;
+    color: var(--text);
+    border-radius: 10px;
+    padding: 12px;
+    outline: none;
+}
+
+.auth-form input:focus {
+    border-color: #94a3b8;
+}
+
+.auth-status {
+    min-height: 22px;
+    margin: 14px 0 0;
+    font-size: 13px;
+}
+
+.text-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 0;
+    font-size: 13px;
+}
+
+.text-btn:hover {
+    color: var(--text);
+}
+
 button,
 input,
 textarea,
@@ -174,6 +254,27 @@ button {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.account-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sync-status {
+    max-width: 180px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.account-control span {
+    max-width: 180px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .eyebrow {
@@ -362,6 +463,27 @@ button {
     font-size: 12px;
 }
 
+.card-audio {
+    width: min(420px, 100%);
+    margin-top: 24px;
+}
+
+.card-attachments {
+    display: grid;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.card-attachments a {
+    color: var(--text);
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.card-attachments a:hover {
+    text-decoration: underline;
+}
+
 .review-actions {
     margin-top: 16px;
 }
@@ -543,6 +665,10 @@ button {
     resize: vertical;
 }
 
+.modal input[type="file"] {
+    padding: 9px;
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -593,6 +719,10 @@ button {
     .topbar-actions {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .account-control {
+        justify-content: space-between;
     }
 
     .streak-pill {

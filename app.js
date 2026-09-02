@@ -1,93 +1,177 @@
-const DEFAULT_STATE = {
-  decks: [
-    { id: "js", name: "JavaScript" },
-    { id: "react", name: "React" },
-    { id: "system", name: "System Design" },
-    { id: "backend", name: "Backend" },
-    { id: "behavioral", name: "Behavioral" }
-  ],
-  cards: [
-    {
-      id: crypto.randomUUID(),
-      deckId: "js",
-      question: "What is a closure in JavaScript?",
-      answer: "A closure is created when a function retains access to variables from its lexical scope even after the outer function has finished executing.",
-      tags: ["javascript", "scope", "closure"],
-      dueAt: Date.now(),
-      interval: 0,
-      ease: 2.5
-    },
-    {
-      id: crypto.randomUUID(),
-      deckId: "react",
-      question: "Why can stale closures happen in React?",
-      answer: "A callback can capture state or props from the render in which it was created. If that callback runs later, it may read an older snapshot unless dependencies, functional updates, refs, or another suitable pattern are used.",
-      tags: ["react", "closures", "state"],
-      dueAt: Date.now(),
-      interval: 0,
-      ease: 2.5
-    },
-    {
-      id: crypto.randomUUID(),
-      deckId: "system",
-      question: "Why can Canvas outperform thousands of DOM nodes for dense visualizations?",
-      answer: "Canvas draws many visual primitives into one DOM element, avoiding the layout, style calculation and memory overhead of thousands of individual DOM elements. The tradeoff is that interaction and accessibility must be implemented manually.",
-      tags: ["canvas", "performance", "frontend-system-design"],
-      dueAt: Date.now(),
-      interval: 0,
-      ease: 2.5
-    },
-    {
-      id: crypto.randomUUID(),
-      deckId: "backend",
-      question: "What problem does an event-driven architecture solve?",
-      answer: "It decouples producers from consumers. A producer publishes an event and independent consumers react to it asynchronously, which improves extensibility and can help scale workloads independently.",
-      tags: ["backend", "events", "architecture"],
-      dueAt: Date.now(),
-      interval: 0,
-      ease: 2.5
-    },
-    {
-      id: crypto.randomUUID(),
-      deckId: "behavioral",
-      question: "How should you structure a behavioral interview answer?",
-      answer: "Use STAR: Situation, Task, Action and Result. Keep the context short, make your personal actions explicit, and quantify the result when possible.",
-      tags: ["behavioral", "star"],
-      dueAt: Date.now(),
-      interval: 0,
-      ease: 2.5
-    }
-  ],
-  reviews: []
-};
+const STORAGE_BUCKET = "card-assets";
+const { createClient } = window.supabase || {};
 
-
-const STORAGE_KEY = "interview-anki-state-v1";
-
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    const fresh = structuredClone(DEFAULT_STATE);
-    saveState(fresh);
-    return fresh;
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const fresh = structuredClone(DEFAULT_STATE);
-    saveState(fresh);
-    return fresh;
-  }
+if (!createClient) {
+  throw new Error("Supabase client failed to load.");
 }
 
-function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+const supabase = createClient(
+  window.ANKI_SUPABASE_URL,
+  window.ANKI_SUPABASE_PUBLISHABLE_KEY
+);
 
+const DEFAULT_DECKS = [
+  "JavaScript",
+  "React",
+  "System Design",
+  "Backend",
+  "Behavioral"
+];
+
+const DEFAULT_CARDS = [
+  {
+    deckName: "JavaScript",
+    question: "What is a closure in JavaScript?",
+    answer: "A closure is created when a function retains access to variables from its lexical scope even after the outer function has finished executing.",
+    tags: ["javascript", "scope", "closure"]
+  },
+  {
+    deckName: "React",
+    question: "Why can stale closures happen in React?",
+    answer: "A callback can capture state or props from the render in which it was created. If that callback runs later, it may read an older snapshot unless dependencies, functional updates, refs, or another suitable pattern are used.",
+    tags: ["react", "closures", "state"]
+  },
+  {
+    deckName: "System Design",
+    question: "Why can Canvas outperform thousands of DOM nodes for dense visualizations?",
+    answer: "Canvas draws many visual primitives into one DOM element, avoiding the layout, style calculation and memory overhead of thousands of individual DOM elements. The tradeoff is that interaction and accessibility must be implemented manually.",
+    tags: ["canvas", "performance", "frontend-system-design"]
+  },
+  {
+    deckName: "Backend",
+    question: "What problem does an event-driven architecture solve?",
+    answer: "It decouples producers from consumers. A producer publishes an event and independent consumers react to it asynchronously, which improves extensibility and can help scale workloads independently.",
+    tags: ["backend", "events", "architecture"]
+  },
+  {
+    deckName: "Behavioral",
+    question: "How should you structure a behavioral interview answer?",
+    answer: "Use STAR: Situation, Task, Action and Result. Keep the context short, make your personal actions explicit, and quantify the result when possible.",
+    tags: ["behavioral", "star"]
+  }
+];
 
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
+
+let session = null;
+let state = { decks: [], cards: [], reviews: [] };
+let currentView = "dashboard";
+let reviewQueue = [];
+let reviewIndex = 0;
+let recognition = null;
+let mediaRecorder = null;
+let recordingStream = null;
+let recordingChunks = [];
+let recordingCard = null;
+let isRecording = false;
+let latestTranscript = "";
+let authMode = "signin";
+
+const els = {
+  appShell: document.querySelector("#appShell"),
+  authGate: document.querySelector("#authGate"),
+  authTitle: document.querySelector("#authTitle"),
+  authSubtitle: document.querySelector("#authSubtitle"),
+  authForm: document.querySelector("#authForm"),
+  authEmail: document.querySelector("#authEmail"),
+  authPassword: document.querySelector("#authPassword"),
+  authSubmit: document.querySelector("#authSubmit"),
+  authStatus: document.querySelector("#authStatus"),
+  authToggle: document.querySelector("#authToggle"),
+  userEmail: document.querySelector("#userEmail"),
+  signOutBtn: document.querySelector("#signOutBtn"),
+  syncStatus: document.querySelector("#syncStatus"),
+  views: {
+    dashboard: document.querySelector("#dashboardView"),
+    review: document.querySelector("#reviewView"),
+    cards: document.querySelector("#cardsView")
+  },
+  pageTitle: document.querySelector("#pageTitle"),
+  navItems: [...document.querySelectorAll(".nav-item")],
+  deckList: document.querySelector("#deckList"),
+  deckOverview: document.querySelector("#deckOverview"),
+  dueCount: document.querySelector("#dueCount"),
+  totalCards: document.querySelector("#totalCards"),
+  reviewedToday: document.querySelector("#reviewedToday"),
+  retentionValue: document.querySelector("#retentionValue"),
+  streakValue: document.querySelector("#streakValue"),
+  heroDueText: document.querySelector("#heroDueText"),
+  startReviewBtn: document.querySelector("#startReviewBtn"),
+  addCardBtn: document.querySelector("#addCardBtn"),
+  addDeckBtn: document.querySelector("#addDeckBtn"),
+  searchInput: document.querySelector("#searchInput"),
+  deckFilter: document.querySelector("#deckFilter"),
+  cardsTable: document.querySelector("#cardsTable"),
+  reviewDeckBadge: document.querySelector("#reviewDeckBadge"),
+  reviewPosition: document.querySelector("#reviewPosition"),
+  reviewTotal: document.querySelector("#reviewTotal"),
+  questionText: document.querySelector("#questionText"),
+  answerArea: document.querySelector("#answerArea"),
+  answerText: document.querySelector("#answerText"),
+  answerConcepts: document.querySelector("#answerConcepts"),
+  cardAudio: document.querySelector("#cardAudio"),
+  recordingAudio: document.querySelector("#recordingAudio"),
+  cardAttachments: document.querySelector("#cardAttachments"),
+  showAnswerBtn: document.querySelector("#showAnswerBtn"),
+  ratingActions: document.querySelector("#ratingActions"),
+  recordBtn: document.querySelector("#recordBtn"),
+  voiceStatus: document.querySelector("#voiceStatus"),
+  transcriptBox: document.querySelector("#transcriptBox"),
+  cardDialog: document.querySelector("#cardDialog"),
+  cardForm: document.querySelector("#cardForm"),
+  cardDialogTitle: document.querySelector("#cardDialogTitle"),
+  cardId: document.querySelector("#cardId"),
+  cardDeck: document.querySelector("#cardDeck"),
+  cardQuestion: document.querySelector("#cardQuestion"),
+  cardAnswer: document.querySelector("#cardAnswer"),
+  cardTags: document.querySelector("#cardTags"),
+  cardAudioFile: document.querySelector("#cardAudioFile"),
+  cardAttachmentsInput: document.querySelector("#cardAttachmentsInput"),
+  closeCardDialog: document.querySelector("#closeCardDialog"),
+  cancelCardBtn: document.querySelector("#cancelCardBtn"),
+  deckDialog: document.querySelector("#deckDialog"),
+  deckForm: document.querySelector("#deckForm"),
+  deckName: document.querySelector("#deckName"),
+  closeDeckDialog: document.querySelector("#closeDeckDialog"),
+  cancelDeckBtn: document.querySelector("#cancelDeckBtn")
+};
+
+function startOfToday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function getDeck(deckId) {
+  return state.decks.find(deck => deck.id === deckId);
+}
+
+function getDueCards(deckId = null) {
+  return state.cards.filter(card => isDue(card) && (!deckId || card.deckId === deckId));
+}
+
+function isDue(card, now = Date.now()) {
+  return (card.dueAt || 0) <= now;
+}
+
+function calculateStreak() {
+  if (!state.reviews.length) return 0;
+
+  const days = new Set(
+    state.reviews.map(review => new Date(review.reviewedAt).toDateString())
+  );
+  let streak = 0;
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+
+  while (days.has(cursor.toDateString())) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return streak;
+}
 
 function scheduleCard(card, rating, now = Date.now()) {
   const updated = { ...card };
@@ -125,118 +209,126 @@ function scheduleCard(card, rating, now = Date.now()) {
   return updated;
 }
 
-function isDue(card, now = Date.now()) {
-  return (card.dueAt || 0) <= now;
+function normalizeCard(row) {
+  return {
+    id: row.id,
+    deckId: row.deck_id,
+    question: row.question,
+    answer: row.answer,
+    tags: row.tags || [],
+    dueAt: new Date(row.due_at).getTime(),
+    interval: row.interval || 0,
+    ease: Number(row.ease || 2.5),
+    audioPath: row.audio_path || null,
+    attachments: row.attachment_paths || []
+  };
 }
 
-
-let state = loadState();
-let currentView = "dashboard";
-let reviewQueue = [];
-let reviewIndex = 0;
-let recognition = null;
-let isRecording = false;
-
-const els = {
-  views: {
-    dashboard: document.querySelector("#dashboardView"),
-    review: document.querySelector("#reviewView"),
-    cards: document.querySelector("#cardsView")
-  },
-  pageTitle: document.querySelector("#pageTitle"),
-  navItems: [...document.querySelectorAll(".nav-item")],
-  deckList: document.querySelector("#deckList"),
-  deckOverview: document.querySelector("#deckOverview"),
-  dueCount: document.querySelector("#dueCount"),
-  totalCards: document.querySelector("#totalCards"),
-  reviewedToday: document.querySelector("#reviewedToday"),
-  retentionValue: document.querySelector("#retentionValue"),
-  streakValue: document.querySelector("#streakValue"),
-  heroDueText: document.querySelector("#heroDueText"),
-  startReviewBtn: document.querySelector("#startReviewBtn"),
-  addCardBtn: document.querySelector("#addCardBtn"),
-  addDeckBtn: document.querySelector("#addDeckBtn"),
-  searchInput: document.querySelector("#searchInput"),
-  deckFilter: document.querySelector("#deckFilter"),
-  cardsTable: document.querySelector("#cardsTable"),
-  reviewDeckBadge: document.querySelector("#reviewDeckBadge"),
-  reviewPosition: document.querySelector("#reviewPosition"),
-  reviewTotal: document.querySelector("#reviewTotal"),
-  questionText: document.querySelector("#questionText"),
-  answerArea: document.querySelector("#answerArea"),
-  answerText: document.querySelector("#answerText"),
-  answerConcepts: document.querySelector("#answerConcepts"),
-  showAnswerBtn: document.querySelector("#showAnswerBtn"),
-  ratingActions: document.querySelector("#ratingActions"),
-  recordBtn: document.querySelector("#recordBtn"),
-  voiceStatus: document.querySelector("#voiceStatus"),
-  transcriptBox: document.querySelector("#transcriptBox"),
-  cardDialog: document.querySelector("#cardDialog"),
-  cardForm: document.querySelector("#cardForm"),
-  cardDialogTitle: document.querySelector("#cardDialogTitle"),
-  cardId: document.querySelector("#cardId"),
-  cardDeck: document.querySelector("#cardDeck"),
-  cardQuestion: document.querySelector("#cardQuestion"),
-  cardAnswer: document.querySelector("#cardAnswer"),
-  cardTags: document.querySelector("#cardTags"),
-  closeCardDialog: document.querySelector("#closeCardDialog"),
-  cancelCardBtn: document.querySelector("#cancelCardBtn"),
-  deckDialog: document.querySelector("#deckDialog"),
-  deckForm: document.querySelector("#deckForm"),
-  deckName: document.querySelector("#deckName"),
-  closeDeckDialog: document.querySelector("#closeDeckDialog"),
-  cancelDeckBtn: document.querySelector("#cancelDeckBtn")
-};
-
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+function normalizeReview(row) {
+  return {
+    id: row.id,
+    cardId: row.card_id,
+    deckId: row.deck_id,
+    rating: row.rating,
+    reviewedAt: new Date(row.reviewed_at).getTime()
+  };
 }
 
-function getDeck(deckId) {
-  return state.decks.find(deck => deck.id === deckId);
+function cardToRow(card) {
+  return {
+    id: card.id,
+    user_id: session.user.id,
+    deck_id: card.deckId,
+    question: card.question,
+    answer: card.answer,
+    tags: card.tags || [],
+    due_at: new Date(card.dueAt || Date.now()).toISOString(),
+    interval: card.interval || 0,
+    ease: card.ease || 2.5,
+    audio_path: card.audioPath || null,
+    attachment_paths: card.attachments || [],
+    updated_at: new Date().toISOString()
+  };
 }
 
-function getDueCards(deckId = null) {
-  return state.cards.filter(card =>
-    isDue(card) && (!deckId || card.deckId === deckId)
-  );
+async function seedDefaultData() {
+  const userId = session.user.id;
+  const decks = DEFAULT_DECKS.map(name => ({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    name
+  }));
+
+  const { error: deckError } = await supabase.from("decks").insert(decks);
+  if (deckError) throw deckError;
+
+  const deckIds = Object.fromEntries(decks.map(deck => [deck.name, deck.id]));
+  const cards = DEFAULT_CARDS.map(card => ({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    deck_id: deckIds[card.deckName],
+    question: card.question,
+    answer: card.answer,
+    tags: card.tags,
+    due_at: new Date().toISOString(),
+    interval: 0,
+    ease: 2.5
+  }));
+
+  const { error: cardError } = await supabase.from("cards").insert(cards);
+  if (cardError) throw cardError;
 }
 
-function calculateStreak() {
-  if (!state.reviews.length) return 0;
-  const days = new Set(
-    state.reviews.map(review => new Date(review.reviewedAt).toDateString())
-  );
+async function loadCloudState() {
+  setSyncStatus("Syncing...");
 
-  let streak = 0;
-  const cursor = new Date();
-  cursor.setHours(0, 0, 0, 0);
+  const [decksResult, cardsResult, reviewsResult] = await Promise.all([
+    supabase.from("decks").select("*").order("created_at"),
+    supabase.from("cards").select("*").order("created_at"),
+    supabase.from("reviews").select("*").order("reviewed_at")
+  ]);
 
-  while (days.has(cursor.toDateString())) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
+  if (decksResult.error) throw decksResult.error;
+  if (cardsResult.error) throw cardsResult.error;
+  if (reviewsResult.error) throw reviewsResult.error;
+
+  if (!decksResult.data.length) {
+    await seedDefaultData();
+    return loadCloudState();
   }
 
-  return streak;
+  state = {
+    decks: decksResult.data,
+    cards: cardsResult.data.map(normalizeCard),
+    reviews: reviewsResult.data.map(normalizeReview)
+  };
+  setSyncStatus("Synced");
+}
+
+function setSyncStatus(message) {
+  if (els.syncStatus) els.syncStatus.textContent = message;
+}
+
+function showError(error, fallback = "Something went wrong. Please try again.") {
+  console.error(error);
+  setSyncStatus(fallback);
+  alert(error?.message || fallback);
 }
 
 function renderStats() {
   const today = startOfToday();
-  const todaysReviews = state.reviews.filter(r => r.reviewedAt >= today);
-  const successful = todaysReviews.filter(r => ["good", "easy"].includes(r.rating)).length;
+  const todaysReviews = state.reviews.filter(review => review.reviewedAt >= today);
+  const successful = todaysReviews.filter(review => ["good", "easy"].includes(review.rating)).length;
   const retention = todaysReviews.length
     ? Math.round((successful / todaysReviews.length) * 100)
     : 0;
+  const due = getDueCards().length;
 
-  els.dueCount.textContent = getDueCards().length;
+  els.dueCount.textContent = due;
   els.totalCards.textContent = state.cards.length;
   els.reviewedToday.textContent = todaysReviews.length;
   els.retentionValue.textContent = `${retention}%`;
   els.streakValue.textContent = calculateStreak();
-
-  const due = getDueCards().length;
   els.heroDueText.textContent = due
     ? `${due} card${due === 1 ? "" : "s"} waiting for you`
     : "No cards due right now";
@@ -267,8 +359,8 @@ function renderDecks() {
     `;
   }).join("") || `<div class="empty-state">No decks yet.</div>`;
 
-  const deckOptions = state.decks.map(
-    deck => `<option value="${deck.id}">${escapeHtml(deck.name)}</option>`
+  const deckOptions = state.decks.map(deck =>
+    `<option value="${deck.id}">${escapeHtml(deck.name)}</option>`
   ).join("");
 
   els.cardDeck.innerHTML = deckOptions;
@@ -278,7 +370,6 @@ function renderDecks() {
 function renderCards() {
   const query = els.searchInput.value.trim().toLowerCase();
   const deckId = els.deckFilter.value;
-
   const cards = state.cards.filter(card => {
     const deckMatches = !deckId || card.deckId === deckId;
     const searchable = `${card.question} ${card.answer} ${(card.tags || []).join(" ")}`.toLowerCase();
@@ -314,22 +405,11 @@ function renderCards() {
 
 function switchView(view) {
   currentView = view;
-
   Object.entries(els.views).forEach(([key, element]) => {
     element.classList.toggle("active", key === view);
   });
-
-  els.navItems.forEach(item => {
-    item.classList.toggle("active", item.dataset.view === view);
-  });
-
-  const titles = {
-    dashboard: "Dashboard",
-    review: "Review",
-    cards: "Cards"
-  };
-  els.pageTitle.textContent = titles[view];
-
+  els.navItems.forEach(item => item.classList.toggle("active", item.dataset.view === view));
+  els.pageTitle.textContent = { dashboard: "Dashboard", review: "Review", cards: "Cards" }[view];
   if (view === "cards") renderCards();
   if (view === "review") beginReview();
 }
@@ -340,27 +420,77 @@ function beginReview(deckId = null) {
   renderReviewCard();
 }
 
+function resetMediaPlayers() {
+  [els.cardAudio, els.recordingAudio].forEach(player => {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    player.classList.add("hidden");
+  });
+  els.cardAttachments.innerHTML = "";
+}
+
+async function loadCardMedia(card) {
+  const cardId = card.id;
+  resetMediaPlayers();
+
+  if (card.audioPath) {
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(card.audioPath, 3600);
+    if (!error && data?.signedUrl && reviewQueue[reviewIndex]?.id === cardId) {
+      els.cardAudio.src = data.signedUrl;
+      els.cardAudio.classList.remove("hidden");
+    }
+  }
+
+  const attachmentLinks = await Promise.all((card.attachments || []).map(async path => {
+    const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(path, 3600);
+    return data?.signedUrl ? { path, url: data.signedUrl } : null;
+  }));
+
+  if (reviewQueue[reviewIndex]?.id === cardId) {
+    els.cardAttachments.innerHTML = attachmentLinks.filter(Boolean).map(({ path, url }) => `
+      <a href="${url}" target="_blank" rel="noreferrer">📎 ${escapeHtml(path.split("/").pop())}</a>
+    `).join("");
+  }
+
+  const { data: recordings } = await supabase
+    .from("review_recordings")
+    .select("storage_path")
+    .eq("card_id", cardId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const latest = recordings?.[0];
+  if (latest && reviewQueue[reviewIndex]?.id === cardId) {
+    const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(latest.storage_path, 3600);
+    if (data?.signedUrl) {
+      els.recordingAudio.src = data.signedUrl;
+      els.recordingAudio.classList.remove("hidden");
+    }
+  }
+}
+
 function renderReviewCard() {
   els.answerArea.classList.add("hidden");
   els.ratingActions.classList.add("hidden");
   els.showAnswerBtn.classList.remove("hidden");
   els.transcriptBox.classList.add("hidden");
   els.transcriptBox.textContent = "";
+  latestTranscript = "";
+  resetMediaPlayers();
 
   if (!reviewQueue.length || reviewIndex >= reviewQueue.length) {
     els.reviewDeckBadge.textContent = "Complete";
     els.reviewPosition.textContent = reviewQueue.length;
     els.reviewTotal.textContent = reviewQueue.length;
     els.questionText.textContent = "You’re done with this review session.";
-    els.answerArea.classList.add("hidden");
     els.showAnswerBtn.classList.add("hidden");
-    els.ratingActions.classList.add("hidden");
     return;
   }
 
   const card = reviewQueue[reviewIndex];
   const deck = getDeck(card.deckId);
-
   els.reviewDeckBadge.textContent = deck?.name || "Deck";
   els.reviewPosition.textContent = reviewIndex + 1;
   els.reviewTotal.textContent = reviewQueue.length;
@@ -369,6 +499,7 @@ function renderReviewCard() {
   els.answerConcepts.innerHTML = (card.tags || [])
     .map(tag => `<span class="concept-tag">${escapeHtml(tag)}</span>`)
     .join("");
+  loadCardMedia(card).catch(error => console.error("Could not load card media", error));
 }
 
 function showAnswer() {
@@ -378,26 +509,40 @@ function showAnswer() {
   els.ratingActions.classList.remove("hidden");
 }
 
-function rateCurrentCard(rating) {
+async function rateCurrentCard(rating) {
   const card = reviewQueue[reviewIndex];
   if (!card) return;
 
-  const updated = scheduleCard(card, rating);
-  const stateIndex = state.cards.findIndex(item => item.id === card.id);
-  state.cards[stateIndex] = updated;
+  try {
+    const updated = scheduleCard(card, rating);
+    const { error: cardError } = await supabase
+      .from("cards")
+      .update({
+        due_at: new Date(updated.dueAt).toISOString(),
+        interval: updated.interval,
+        ease: updated.ease,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", card.id);
+    if (cardError) throw cardError;
 
-  state.reviews.push({
-    id: crypto.randomUUID(),
-    cardId: card.id,
-    deckId: card.deckId,
-    rating,
-    reviewedAt: Date.now()
-  });
+    const { error: reviewError } = await supabase.from("reviews").insert({
+      id: crypto.randomUUID(),
+      user_id: session.user.id,
+      card_id: card.id,
+      deck_id: card.deckId,
+      rating,
+      reviewed_at: new Date().toISOString()
+    });
+    if (reviewError) throw reviewError;
 
-  saveState(state);
-  reviewIndex++;
-  renderReviewCard();
-  renderAll();
+    reviewIndex++;
+    await loadCloudState();
+    renderReviewCard();
+    renderAll();
+  } catch (error) {
+    showError(error, "Could not save this review.");
+  }
 }
 
 function openCardDialog(card = null) {
@@ -414,75 +559,129 @@ function openCardDialog(card = null) {
     els.cardId.value = "";
     if (state.decks[0]) els.cardDeck.value = state.decks[0].id;
   }
-
   els.cardDialog.showModal();
 }
 
-function saveCard(event) {
-  event.preventDefault();
+function safeFileName(name) {
+  return name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "file";
+}
 
-  const id = els.cardId.value;
-  const cardData = {
-    deckId: els.cardDeck.value,
-    question: els.cardQuestion.value.trim(),
-    answer: els.cardAnswer.value.trim(),
-    tags: els.cardTags.value.split(",").map(tag => tag.trim()).filter(Boolean)
-  };
-
-  if (id) {
-    const index = state.cards.findIndex(card => card.id === id);
-    state.cards[index] = { ...state.cards[index], ...cardData };
-  } else {
-    state.cards.push({
-      id: crypto.randomUUID(),
-      ...cardData,
-      dueAt: Date.now(),
-      interval: 0,
-      ease: 2.5
-    });
+async function uploadFile(file, path) {
+  if (file.size > 25 * 1024 * 1024) {
+    throw new Error(`${file.name} is larger than the 25 MB limit.`);
   }
 
-  saveState(state);
-  els.cardDialog.close();
-  renderAll();
-  if (currentView === "cards") renderCards();
+  const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false
+  });
+  if (error) throw error;
+  return path;
 }
 
-function deleteCard(cardId) {
-  const card = state.cards.find(card => card.id === cardId);
-  if (!card) return;
-
-  const confirmed = confirm(`Delete "${card.question}"?`);
-  if (!confirmed) return;
-
-  state.cards = state.cards.filter(card => card.id !== cardId);
-  state.reviews = state.reviews.filter(review => review.cardId !== cardId);
-  saveState(state);
-  renderAll();
-  renderCards();
-}
-
-function createDeck(event) {
+async function saveCard(event) {
   event.preventDefault();
 
+  try {
+    const id = els.cardId.value || crypto.randomUUID();
+    const existing = state.cards.find(card => card.id === id);
+    const card = {
+      id,
+      deckId: els.cardDeck.value,
+      question: els.cardQuestion.value.trim(),
+      answer: els.cardAnswer.value.trim(),
+      tags: els.cardTags.value.split(",").map(tag => tag.trim()).filter(Boolean),
+      dueAt: existing?.dueAt || Date.now(),
+      interval: existing?.interval || 0,
+      ease: existing?.ease || 2.5,
+      audioPath: existing?.audioPath || null,
+      attachments: existing?.attachments || []
+    };
+
+    const { error: cardError } = await supabase.from("cards").upsert(cardToRow(card));
+    if (cardError) throw cardError;
+
+    const userPrefix = `${session.user.id}/${id}`;
+    const audioFile = els.cardAudioFile.files[0];
+    if (audioFile) {
+      card.audioPath = await uploadFile(
+        audioFile,
+        `${userPrefix}/reference-${Date.now()}-${safeFileName(audioFile.name)}`
+      );
+    }
+
+    const attachmentFiles = [...els.cardAttachmentsInput.files];
+    if (attachmentFiles.length) {
+      const newPaths = await Promise.all(attachmentFiles.map(file => uploadFile(
+        file,
+        `${userPrefix}/attachment-${Date.now()}-${safeFileName(file.name)}`
+      )));
+      card.attachments = [...card.attachments, ...newPaths];
+    }
+
+    if (audioFile || attachmentFiles.length) {
+      const { error: mediaError } = await supabase
+        .from("cards")
+        .update({
+          audio_path: card.audioPath,
+          attachment_paths: card.attachments,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", id);
+      if (mediaError) throw mediaError;
+    }
+
+    els.cardDialog.close();
+    await loadCloudState();
+    renderAll();
+  } catch (error) {
+    showError(error, "Could not save this card.");
+  }
+}
+
+async function deleteCard(cardId) {
+  const card = state.cards.find(item => item.id === cardId);
+  if (!card || !confirm(`Delete "${card.question}"?`)) return;
+
+  try {
+    const paths = [card.audioPath, ...(card.attachments || [])].filter(Boolean);
+    if (paths.length) await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+
+    const { error } = await supabase.from("cards").delete().eq("id", cardId);
+    if (error) throw error;
+    await loadCloudState();
+    renderAll();
+    renderCards();
+  } catch (error) {
+    showError(error, "Could not delete this card.");
+  }
+}
+
+async function createDeck(event) {
+  event.preventDefault();
   const name = els.deckName.value.trim();
   if (!name) return;
 
-  const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now()}`;
-
-  state.decks.push({ id, name });
-  saveState(state);
-  els.deckDialog.close();
-  els.deckForm.reset();
-  renderAll();
+  try {
+    const { error } = await supabase.from("decks").insert({
+      id: crypto.randomUUID(),
+      user_id: session.user.id,
+      name
+    });
+    if (error) throw error;
+    els.deckDialog.close();
+    els.deckForm.reset();
+    await loadCloudState();
+    renderAll();
+  } catch (error) {
+    showError(error, "Could not create this deck.");
+  }
 }
 
 function setupVoiceRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
   if (!SpeechRecognition) {
-    els.recordBtn.disabled = true;
-    els.voiceStatus.textContent = "Voice transcription is not supported in this browser.";
+    els.voiceStatus.textContent = "Audio recording works, but speech transcription is not supported here.";
     return;
   }
 
@@ -490,34 +689,149 @@ function setupVoiceRecognition() {
   recognition.lang = "en-IN";
   recognition.interimResults = true;
   recognition.continuous = false;
-
-  recognition.onstart = () => {
-    isRecording = true;
-    els.recordBtn.textContent = "■ Stop";
-    els.voiceStatus.textContent = "Listening...";
-    els.transcriptBox.classList.remove("hidden");
-  };
-
+  recognition.onstart = () => els.transcriptBox.classList.remove("hidden");
   recognition.onresult = event => {
-    const transcript = [...event.results]
-      .map(result => result[0].transcript)
-      .join(" ");
-    els.transcriptBox.textContent = transcript;
+    latestTranscript = [...event.results].map(result => result[0].transcript).join(" ");
+    els.transcriptBox.textContent = latestTranscript;
   };
-
   recognition.onerror = event => {
-    els.voiceStatus.textContent = `Voice error: ${event.error}`;
-  };
-
-  recognition.onend = () => {
-    isRecording = false;
-    els.recordBtn.textContent = "🎙 Start speaking";
-    els.voiceStatus.textContent = "Answer captured. Reveal the card and compare your wording.";
+    if (event.error !== "aborted") els.voiceStatus.textContent = `Transcription error: ${event.error}`;
   };
 }
 
+async function startRecording() {
+  const card = reviewQueue[reviewIndex];
+  if (!card || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    els.voiceStatus.textContent = "Audio recording is not supported in this browser.";
+    return;
+  }
+
+  try {
+    recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const options = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? { mimeType: "audio/webm;codecs=opus" }
+      : {};
+    mediaRecorder = new MediaRecorder(recordingStream, options);
+    recordingChunks = [];
+    recordingCard = card;
+    mediaRecorder.ondataavailable = event => {
+      if (event.data.size) recordingChunks.push(event.data);
+    };
+    mediaRecorder.onstop = finishRecording;
+    mediaRecorder.start();
+    isRecording = true;
+    els.recordBtn.textContent = "■ Stop recording";
+    els.voiceStatus.textContent = "Recording...";
+    els.transcriptBox.classList.remove("hidden");
+    if (recognition) {
+      try { recognition.start(); } catch (error) { console.debug("Recognition start skipped", error); }
+    }
+  } catch (error) {
+    showError(error, "Microphone permission is required to record audio.");
+  }
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+  isRecording = false;
+  els.recordBtn.disabled = true;
+  els.recordBtn.textContent = "Saving recording...";
+  if (recognition) {
+    try { recognition.stop(); } catch (error) { console.debug("Recognition stop skipped", error); }
+  }
+  mediaRecorder.stop();
+}
+
+async function finishRecording() {
+  const card = recordingCard;
+  const blob = new Blob(recordingChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+  recordingStream?.getTracks().forEach(track => track.stop());
+  recordingStream = null;
+
+  try {
+    if (!card || !blob.size) throw new Error("No audio was recorded.");
+    const fileName = `review-${Date.now()}.webm`;
+    const path = await uploadFile(new File([blob], fileName, { type: blob.type }), `${session.user.id}/${card.id}/${fileName}`);
+    const { error } = await supabase.from("review_recordings").insert({
+      id: crypto.randomUUID(),
+      user_id: session.user.id,
+      card_id: card.id,
+      storage_path: path,
+      transcript: latestTranscript || null
+    });
+    if (error) throw error;
+    els.voiceStatus.textContent = "Recording saved to this review.";
+    await loadCardMedia(card);
+  } catch (error) {
+    showError(error, "Could not save this recording.");
+  } finally {
+    mediaRecorder = null;
+    recordingCard = null;
+    els.recordBtn.disabled = false;
+    els.recordBtn.textContent = "🎙 Record answer";
+  }
+}
+
+function toggleRecording() {
+  if (isRecording) stopRecording();
+  else startRecording();
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isSignup = mode === "signup";
+  els.authTitle.textContent = isSignup ? "Create your account" : "Sign in to continue";
+  els.authSubtitle.textContent = isSignup
+    ? "Create an account to sync your decks, reviews, and audio."
+    : "Your decks, reviews, and audio stay synced across devices.";
+  els.authSubmit.textContent = isSignup ? "Create account" : "Sign in";
+  els.authToggle.textContent = isSignup ? "Already have an account? Sign in" : "Need an account? Sign up";
+  els.authPassword.autocomplete = isSignup ? "new-password" : "current-password";
+  els.authStatus.textContent = "";
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  els.authStatus.textContent = authMode === "signup" ? "Creating account..." : "Signing in...";
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+
+  const result = authMode === "signup"
+    ? await supabase.auth.signUp({ email, password })
+    : await supabase.auth.signInWithPassword({ email, password });
+
+  if (result.error) {
+    els.authStatus.textContent = result.error.message;
+    return;
+  }
+
+  if (authMode === "signup" && !result.data.session) {
+    els.authStatus.textContent = "Account created. Check your email to confirm, then sign in.";
+  }
+}
+
+async function handleSession(nextSession) {
+  session = nextSession;
+  if (!session) {
+    els.appShell.classList.add("hidden");
+    els.authGate.classList.remove("hidden");
+    return;
+  }
+
+  els.authGate.classList.add("hidden");
+  els.appShell.classList.remove("hidden");
+  els.userEmail.textContent = session.user.email || "Signed in";
+
+  try {
+    await loadCloudState();
+    renderAll();
+  } catch (error) {
+    showError(error, "Run supabase/schema.sql in Supabase SQL Editor first.");
+  }
+}
+
 function escapeHtml(value = "") {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -531,57 +845,51 @@ function renderAll() {
   if (currentView === "cards") renderCards();
 }
 
-els.navItems.forEach(item =>
-  item.addEventListener("click", () => switchView(item.dataset.view))
-);
-
+els.navItems.forEach(item => item.addEventListener("click", () => switchView(item.dataset.view)));
 els.startReviewBtn.addEventListener("click", () => switchView("review"));
 els.showAnswerBtn.addEventListener("click", showAnswer);
 els.addCardBtn.addEventListener("click", () => openCardDialog());
 els.addDeckBtn.addEventListener("click", () => els.deckDialog.showModal());
-
+els.recordBtn.addEventListener("click", toggleRecording);
+els.authForm.addEventListener("submit", event => handleAuthSubmit(event).catch(error => {
+  els.authStatus.textContent = error.message;
+}));
+els.authToggle.addEventListener("click", () => setAuthMode(authMode === "signin" ? "signup" : "signin"));
+els.signOutBtn.addEventListener("click", () => supabase.auth.signOut());
 els.ratingActions.addEventListener("click", event => {
   const button = event.target.closest("[data-rating]");
   if (button) rateCurrentCard(button.dataset.rating);
 });
-
 els.deckList.addEventListener("click", event => {
   const button = event.target.closest("[data-deck-id]");
   if (!button) return;
   switchView("review");
   beginReview(button.dataset.deckId);
 });
-
 els.cardsTable.addEventListener("click", event => {
   const button = event.target.closest("[data-action]");
   if (!button) return;
-
-  const cardId = button.dataset.cardId;
-
-  if (button.dataset.action === "edit") {
-    openCardDialog(state.cards.find(card => card.id === cardId));
-  }
-
-  if (button.dataset.action === "delete") {
-    deleteCard(cardId);
-  }
+  const card = state.cards.find(item => item.id === button.dataset.cardId);
+  if (button.dataset.action === "edit") openCardDialog(card);
+  if (button.dataset.action === "delete") deleteCard(button.dataset.cardId);
 });
-
 els.searchInput.addEventListener("input", renderCards);
 els.deckFilter.addEventListener("change", renderCards);
-els.cardForm.addEventListener("submit", saveCard);
-els.deckForm.addEventListener("submit", createDeck);
-
+els.cardForm.addEventListener("submit", event => saveCard(event));
+els.deckForm.addEventListener("submit", event => createDeck(event));
 els.closeCardDialog.addEventListener("click", () => els.cardDialog.close());
 els.cancelCardBtn.addEventListener("click", () => els.cardDialog.close());
 els.closeDeckDialog.addEventListener("click", () => els.deckDialog.close());
 els.cancelDeckBtn.addEventListener("click", () => els.deckDialog.close());
 
-els.recordBtn.addEventListener("click", () => {
-  if (!recognition) return;
-  if (isRecording) recognition.stop();
-  else recognition.start();
+setupVoiceRecognition();
+
+supabase.auth.onAuthStateChange((event, nextSession) => {
+  setTimeout(() => handleSession(nextSession), 0);
 });
 
-setupVoiceRecognition();
-renderAll();
+supabase.auth.getSession()
+  .then(({ data: { session: currentSession } }) => handleSession(currentSession))
+  .catch(error => {
+    els.authStatus.textContent = error.message;
+  });
