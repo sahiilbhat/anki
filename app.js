@@ -120,6 +120,7 @@ const els = {
   reviewDeckBadge: document.querySelector("#reviewDeckBadge"),
   reviewPosition: document.querySelector("#reviewPosition"),
   reviewTotal: document.querySelector("#reviewTotal"),
+  reviewProgressBar: document.querySelector("#reviewProgressBar"),
   questionText: document.querySelector("#questionText"),
   answerArea: document.querySelector("#answerArea"),
   answerText: document.querySelector("#answerText"),
@@ -442,8 +443,8 @@ function renderDecks() {
     const total = state.cards.filter(card => card.deckId === deck.id).length;
     return `
       <button class="deck-item" data-deck-id="${deck.id}">
-        <span>${escapeHtml(deck.name)}</span>
-        <span>${total}</span>
+        <span class="deck-name"><span class="deck-dot"></span>${escapeHtml(deck.name)}</span>
+        <span class="deck-count">${total}</span>
       </button>
     `;
   }).join("");
@@ -451,13 +452,20 @@ function renderDecks() {
   els.deckOverview.innerHTML = state.decks.map(deck => {
     const cards = state.cards.filter(card => card.deckId === deck.id);
     const due = cards.filter(isDue).length;
+    const learned = cards.length ? Math.round(((cards.length - due) / cards.length) * 100) : 0;
     return `
       <div class="deck-row">
-        <div>
+        <div class="deck-row-top">
           <strong>${escapeHtml(deck.name)}</strong>
-          <small>${cards.length} cards</small>
+          <small>${due ? `${due} due` : "Up to date"}</small>
         </div>
-        <small>${due} due</small>
+        <div class="deck-progress" aria-label="${learned}% of cards not due">
+          <span style="width: ${learned}%"></span>
+        </div>
+        <div class="deck-row-bottom">
+          <small>${cards.length} card${cards.length === 1 ? "" : "s"}</small>
+          <small>${learned}% on track</small>
+        </div>
       </div>
     `;
   }).join("") || `<div class="empty-state">No decks yet.</div>`;
@@ -484,7 +492,11 @@ function renderCards() {
     return;
   }
 
-  els.cardsTable.innerHTML = cards.map(card => {
+  els.cardsTable.innerHTML = `
+    <div class="cards-table-head" aria-hidden="true">
+      <span>Deck</span><span>Question</span><span>Interval</span><span>Actions</span>
+    </div>
+    ${cards.map(card => {
     const deck = getDeck(card.deckId);
     return `
       <div class="card-row">
@@ -503,7 +515,8 @@ function renderCards() {
         </div>
       </div>
     `;
-  }).join("");
+    }).join("")}
+  `;
 }
 
 function switchView(view) {
@@ -549,6 +562,7 @@ function renderWaitingCard() {
   els.reviewDeckBadge.textContent = "Next up";
   els.reviewPosition.textContent = reviewedInSession;
   els.reviewTotal.textContent = reviewedInSession + reviewQueue.filter(Boolean).length;
+  els.reviewProgressBar.style.width = `${Math.min(100, Math.round((reviewedInSession / Math.max(1, reviewedInSession + reviewQueue.filter(Boolean).length)) * 100))}%`;
   els.questionText.textContent = `Next card in ${formatDelay(delay)}`;
   els.answerArea.classList.add("hidden");
   els.showAnswerBtn.classList.add("hidden");
@@ -625,6 +639,7 @@ function renderReviewCard() {
     els.reviewDeckBadge.textContent = "Complete";
     els.reviewPosition.textContent = reviewedInSession;
     els.reviewTotal.textContent = reviewedInSession;
+    els.reviewProgressBar.style.width = "100%";
     els.questionText.textContent = "You’re done with this review session.";
     els.showAnswerBtn.classList.add("hidden");
     return;
@@ -636,6 +651,7 @@ function renderReviewCard() {
   els.reviewDeckBadge.textContent = deck?.name || "Deck";
   els.reviewPosition.textContent = reviewedInSession + 1;
   els.reviewTotal.textContent = reviewedInSession + reviewQueue.filter(Boolean).length;
+  els.reviewProgressBar.style.width = `${Math.min(100, Math.round((reviewedInSession / Math.max(1, reviewedInSession + reviewQueue.filter(Boolean).length)) * 100))}%`;
   els.questionText.textContent = card.question;
   els.answerText.textContent = card.answer;
   els.answerConcepts.innerHTML = (card.tags || [])

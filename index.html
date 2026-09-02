@@ -43,14 +43,14 @@
                 <div class="brand-mark">A</div>
                 <div>
                     <h1>Interview Anki</h1>
-                    <p>Local-first prep</p>
+                    <p>Cloud-synced prep</p>
                 </div>
             </div>
 
             <nav class="nav">
-                <button class="nav-item active" data-view="dashboard">Dashboard</button>
-                <button class="nav-item" data-view="review">Review</button>
-                <button class="nav-item" data-view="cards">Cards</button>
+                <button class="nav-item active" data-view="dashboard"><span class="nav-glyph">⌂</span><span>Dashboard</span></button>
+                <button class="nav-item" data-view="review"><span class="nav-glyph">◷</span><span>Review</span></button>
+                <button class="nav-item" data-view="cards"><span class="nav-glyph">▤</span><span>Cards</span></button>
             </nav>
 
             <div class="deck-section">
@@ -59,6 +59,14 @@
                     <button id="addDeckBtn" class="icon-btn" aria-label="Add deck">+</button>
                 </div>
                 <div id="deckList" class="deck-list"></div>
+            </div>
+
+            <div class="sidebar-footer">
+                <span class="sidebar-footer-mark">✦</span>
+                <div>
+                    <strong>Private by design</strong>
+                    <span>Your workspace stays synced.</span>
+                </div>
             </div>
         </aside>
 
@@ -82,6 +90,13 @@
             </header>
 
             <section id="dashboardView" class="view active">
+                <div class="dashboard-intro">
+                    <div>
+                        <p class="eyebrow">Your study workspace</p>
+                        <h3>Build recall, one card at a time.</h3>
+                    </div>
+                    <span class="intro-note">Small sessions compound.</span>
+                </div>
                 <div class="stats-grid">
                     <article class="stat-card">
                         <span>Due today</span>
@@ -108,6 +123,7 @@
                 <div class="dashboard-grid">
                     <article class="panel hero-panel">
                         <div>
+                            <span class="hero-kicker"><span class="live-dot"></span> Adaptive review</span>
                             <p class="eyebrow">Ready to study?</p>
                             <h3 id="heroDueText">No cards due right now</h3>
                             <p>Use spaced repetition to revisit concepts at the right time.</p>
@@ -129,10 +145,18 @@
 
             <section id="reviewView" class="view">
                 <div class="review-layout">
+                    <div class="view-heading">
+                        <div>
+                            <p class="eyebrow">Focus mode</p>
+                            <h3>Review your queue</h3>
+                        </div>
+                        <span class="view-heading-note">Recall first. Reveal second.</span>
+                    </div>
                     <div class="review-meta">
                         <span id="reviewDeckBadge" class="badge">Deck</span>
                         <span><span id="reviewPosition">0</span> / <span id="reviewTotal">0</span></span>
                     </div>
+                    <div class="review-progress" aria-hidden="true"><span id="reviewProgressBar"></span></div>
 
                     <article class="flashcard">
                         <p class="eyebrow">Question</p>
@@ -176,6 +200,13 @@
             </section>
 
             <section id="cardsView" class="view">
+                <div class="view-heading cards-heading">
+                    <div>
+                        <p class="eyebrow">Your library</p>
+                        <h3>All cards</h3>
+                    </div>
+                    <span class="view-heading-note">Search, edit, and keep your knowledge tidy.</span>
+                </div>
                 <div class="cards-toolbar">
                     <input id="searchInput" type="search" placeholder="Search questions, answers or tags..." />
                     <select id="deckFilter"></select>
