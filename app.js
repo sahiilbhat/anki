@@ -100,6 +100,8 @@ const els = {
   heroDueText: document.querySelector("#heroDueText"),
   startReviewBtn: document.querySelector("#startReviewBtn"),
   addCardBtn: document.querySelector("#addCardBtn"),
+  importBtn: document.querySelector("#importBtn"),
+  importFileInput: document.querySelector("#importFileInput"),
   addDeckBtn: document.querySelector("#addDeckBtn"),
   searchInput: document.querySelector("#searchInput"),
   deckFilter: document.querySelector("#deckFilter"),
@@ -640,6 +642,121 @@ async function saveCard(event) {
   }
 }
 
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index];
+    const nextCharacter = text[index + 1];
+
+    if (character === '"' && quoted && nextCharacter === '"') {
+      cell += '"';
+      index++;
+    } else if (character === '"') {
+      quoted = !quoted;
+    } else if (character === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && nextCharacter === "\n") index++;
+      row.push(cell.trim());
+      if (row.some(value => value)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+
+  row.push(cell.trim());
+  if (row.some(value => value)) rows.push(row);
+
+  if (rows.length < 2) return [];
+  const headers = rows.shift().map(header => header.toLowerCase().replace(/\s+/g, "_"));
+  return rows.map(values => Object.fromEntries(
+    headers.map((header, index) => [header, values[index] || ""])
+  ));
+}
+
+function parseImportCards(text, fileName) {
+  if (fileName.toLowerCase().endsWith(".json")) {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : parsed.cards || [];
+  }
+  return parseCsv(text);
+}
+
+function normalizeImportCard(item) {
+  const deckName = item.deck || item.deckName || item.deck_name || "Imported";
+  const tags = Array.isArray(item.tags)
+    ? item.tags
+    : String(item.tags || "").split(/[|,]/).map(tag => tag.trim()).filter(Boolean);
+
+  return {
+    deckName: String(deckName).trim() || "Imported",
+    question: String(item.question || item.front || "").trim(),
+    answer: String(item.answer || item.back || "").trim(),
+    tags
+  };
+}
+
+async function importCardsFromFile(file) {
+  try {
+    setSyncStatus("Importing...");
+    const imported = parseImportCards(await file.text(), file.name)
+      .map(normalizeImportCard)
+      .filter(card => card.question && card.answer);
+
+    if (!imported.length) {
+      throw new Error("No valid cards found. Each card needs a question and answer.");
+    }
+
+    const deckNames = [...new Set(imported.map(card => card.deckName))];
+    const existingDeckNames = new Set(state.decks.map(deck => deck.name.toLowerCase()));
+    const decksToCreate = deckNames
+      .filter(name => !existingDeckNames.has(name.toLowerCase()))
+      .map(name => ({ id: crypto.randomUUID(), user_id: session.user.id, name }));
+
+    let newDecks = [];
+    if (decksToCreate.length) {
+      const { data, error } = await supabaseClient
+        .from("decks")
+        .insert(decksToCreate)
+        .select("*");
+      if (error) throw error;
+      newDecks = data || [];
+    }
+
+    const allDecks = [...state.decks, ...newDecks];
+    const deckIds = new Map(allDecks.map(deck => [deck.name.toLowerCase(), deck.id]));
+    const cardRows = imported.map(card => ({
+      id: crypto.randomUUID(),
+      user_id: session.user.id,
+      deck_id: deckIds.get(card.deckName.toLowerCase()),
+      question: card.question,
+      answer: card.answer,
+      tags: card.tags,
+      due_at: new Date().toISOString(),
+      interval: 0,
+      ease: 2.5
+    }));
+
+    const { error: cardError } = await supabaseClient.from("cards").insert(cardRows);
+    if (cardError) throw cardError;
+
+    await loadCloudState();
+    renderAll();
+    alert(`${cardRows.length} card${cardRows.length === 1 ? "" : "s"} imported successfully.`);
+  } catch (error) {
+    showError(error, "Could not import this file.");
+  } finally {
+    els.importFileInput.value = "";
+  }
+}
+
 async function deleteCard(cardId) {
   const card = state.cards.find(item => item.id === cardId);
   if (!card || !confirm(`Delete "${card.question}"?`)) return;
@@ -854,6 +971,11 @@ els.navItems.forEach(item => item.addEventListener("click", () => switchView(ite
 els.startReviewBtn.addEventListener("click", () => switchView("review"));
 els.showAnswerBtn.addEventListener("click", showAnswer);
 els.addCardBtn.addEventListener("click", () => openCardDialog());
+els.importBtn.addEventListener("click", () => els.importFileInput.click());
+els.importFileInput.addEventListener("change", event => {
+  const file = event.target.files[0];
+  if (file) importCardsFromFile(file);
+});
 els.addDeckBtn.addEventListener("click", () => els.deckDialog.showModal());
 els.recordBtn.addEventListener("click", toggleRecording);
 els.authForm.addEventListener("submit", event => handleAuthSubmit(event).catch(error => {
